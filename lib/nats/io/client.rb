@@ -370,6 +370,7 @@ module NATS
 
     private def establish_connection!
       @ruby_pid = Process.pid # For fork detection
+      ::Rails.logger.info "NATS: establish connection"
 
       srv = nil
       begin
@@ -385,11 +386,14 @@ module NATS
 
         # Create TCP socket connection to NATS.
         @io = create_socket
+        ::Rails.logger.info "NATS: create socket"
         @io.connect
+        ::Rails.logger.info "NATS: connect"
 
         # Capture state that we have had a TCP connection established against
         # this server and could potentially be used for reconnecting.
         srv[:was_connected] = true
+        ::Rails.logger.info "NATS: was_connected = #{srv[:was_connected]}"
 
         # Connection established and now in process of sending CONNECT to NATS
         @status = CONNECTING
@@ -404,9 +408,12 @@ module NATS
         # Add back to rotation since successfully connected
         server_pool << srv
       rescue NATS::IO::NoServersError => e
+        ::Rails.logger.info "NATS: NoServersError"
         @disconnect_cb.call(e) if @disconnect_cb
         raise @last_err || e
       rescue => e
+        ::Rails.logger.info "NATS: connect error"
+        ::Rails.logger.info({exception: e})
         # Capture sticky error
         synchronize do
           @last_err = e
@@ -623,7 +630,9 @@ module NATS
       msg_size = msg.data.bytesize
 
       # Publish request and wait for reply.
+      ::Rails.logger.info "NATS: request_msg"
       publish_msg(msg)
+      ::Rails.logger.info "NATS: publish_msg"
       begin
         MonotonicTime::with_nats_timeout(timeout) do
           @resp_sub.synchronize do
@@ -1091,6 +1100,9 @@ module NATS
     def send_command(command)
       raise NATS::IO::ConnectionClosedError if closed?
 
+      ::Rails.logger.info "NATS: send command #{command}"
+      ::Rails.logger.info "disconnected? #{disconnected?}"
+      ::Rails.logger.info "should_reconnect? #{should_reconnect?}"
       establish_connection! if !status || (disconnected? && should_reconnect?)
 
       @pending_size += command.bytesize
@@ -1406,6 +1418,7 @@ module NATS
     end
 
     def process_connect_init
+      ::Rails.logger.info "NATS: process_connect_init start"
       # FIXME: Can receive PING as well here in recent versions.
       line = @io.read_line(options[:connect_timeout])
       if !line or line.empty?
